@@ -13,7 +13,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 NODES_FILE = os.path.join(BASE_DIR, "nodes.json")
 SERVER_TOML = "/etc/rathole/server.toml"
-CORE_PORT = 2020
 
 app = FastAPI()
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -25,31 +24,38 @@ except:
 
 def get_config():
     if not os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "w") as f: json.dump({"password": "123456", "core_port": CORE_PORT}, f)
-        return {"password": "123456", "core_port": CORE_PORT}
+        with open(CONFIG_FILE, "w") as f: json.dump({"password": "123456"}, f)
     with open(CONFIG_FILE, "r") as f: return json.load(f)
 
 def get_nodes():
     if not os.path.exists(NODES_FILE):
         with open(NODES_FILE, "w") as f: json.dump([], f)
-        return []
     with open(NODES_FILE, "r") as f: return json.load(f)
 
 def save_nodes(nodes):
     with open(NODES_FILE, "w") as f: json.dump(nodes, f, indent=4)
 
-def update_iran_config(user_port: int):
+def update_iran_config(core_port: int, user_port: int):
     os.makedirs(os.path.dirname(SERVER_TOML), exist_ok=True)
+    
+    # If file doesn't exist, create it with the provided core_port
     if not os.path.exists(SERVER_TOML):
-        with open(SERVER_TOML, "w") as f:
-            f.write(f'[server]\nbind_addr = "0.0.0.0:{CORE_PORT}"\ndefault_token = "musixal"\nheartbeat_interval = 30\n\n[server.transport]\ntype = "tcp"\n\n[server.transport.tcp]\nnodelay = true\n')
-
-    with open(SERVER_TOML, "r") as f: content = f.read()
-    service_block = f'\n[server.services.{user_port}]\ntype = "tcp"\nbind_addr = "0.0.0.0:{user_port}"\n'
+        content = f'[server]\nbind_addr = "0.0.0.0:{core_port}"\ndefault_token = "musixal"\nheartbeat_interval = 30\n\n[server.transport]\ntype = "tcp"\n\n[server.transport.tcp]\nnodelay = true\n'
+        with open(SERVER_TOML, "w") as f: f.write(content)
+    else:
+        # File exists, check if we need to update global bind_addr or just add service
+        with open(SERVER_TOML, "r") as f: content = f.read()
+        # Ensure the server binds to the correct port (simple string replace for bind_addr)
+        import re
+        content = re.sub(r'bind_addr = "0.0.0.0:\d+"', f'bind_addr = "0.0.0.0:{core_port}"', content)
+        
+        service_block = f'\n[server.services.{user_port}]\ntype = "tcp"\nbind_addr = "0.0.0.0:{user_port}"\n'
+        if f"[server.services.{user_port}]" not in content:
+            content += service_block
+        
+        with open(SERVER_TOML, "w") as f: f.write(content)
     
-    if f"[server.services.{user_port}]" not in content:
-        with open(SERVER_TOML, "a") as f: f.write(service_block)
-    
+    subprocess.run(["ufw", "allow", f"{core_port}/tcp"], capture_output=True)
     subprocess.run(["ufw", "allow", f"{user_port}/tcp"], capture_output=True)
     subprocess.run(["systemctl", "restart", "rathole-server"], capture_output=True)
 
@@ -72,7 +78,7 @@ async def setup_remote_node(node_data: dict):
         mkdir -p /etc/rathole
         cat << 'EOF' > /etc/rathole/client.toml
 [client]
-remote_addr = "{IRAN_IP}:{CORE_PORT}"
+remote_addr = "{IRAN_IP}:{node_data['core_port']}"
 default_token = "musixal"
 heartbeat_interval = 30
 [client.transport]
@@ -110,7 +116,8 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"nodes": get_nodes(), "config": get_config()})
 
 class NodeModel(BaseModel):
-    label: str; ip: str; ssh_port: int; ssh_user: str; ssh_password: str; user_port: int; target_port: int
+    label: str; ip: str; ssh_port: int; ssh_user: str; ssh_password: str; 
+    core_port: int; user_port: int; target_port: int
 
 @app.post("/add_node")
 async def add_node(data: NodeModel):
@@ -123,7 +130,7 @@ async def add_node(data: NodeModel):
         return JSONResponse({"status": "error", "message": f"خطا در اتصال SSH: {str(e)}"}, status_code=400)
 
     try:
-        update_iran_config(data.user_port)
+        update_iran_config(data.core_port, data.user_port)
     except Exception as e:
         return JSONResponse({"status": "error", "message": f"خطا در سرور ایران: {str(e)}"}, status_code=400)
 
@@ -132,7 +139,7 @@ async def add_node(data: NodeModel):
     node_data = {
         "id": node_id, "name": data.label, "ip": data.ip, "ssh_port": data.ssh_port,
         "ssh_user": data.ssh_user, "ssh_password": data.ssh_password,
-        "user_port": data.user_port, "target_port": data.target_port, "status": "active"
+        "core_port": data.core_port, "user_port": data.user_port, "target_port": data.target_port, "status": "active"
     }
     
     success = await setup_remote_node(node_data)

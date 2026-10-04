@@ -6,18 +6,11 @@ if [ ! -f /usr/local/bin/rathole ]; then
 fi
 CUR_DIR=$(pwd)
 cat << EOF > /etc/systemd/system/rathole-panel.service
-[Unit]
-Description=Rathole Panel Service
-After=network.target
-
-[Service]
-Type=simple
+[Unit] Description=Rathole Panel [Service] Type=simple
 WorkingDirectory=$CUR_DIR
 ExecStart=/usr/bin/python3 app.py
 Restart=always
 RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
+[Install] WantedBy=multi-user.target
 EOF
 systemctl daemon-reload && systemctl enable --now rathole-panel
