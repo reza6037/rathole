@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>پنل مدیریت تانل Rathole</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -19,9 +18,7 @@
             }
         }
     </script>
-    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-darkbg text-slate-100 min-h-screen font-sans" x-data="{ authenticated: false, passwordInput: '', showAddModal: false, showPasswordModal: false }">
@@ -40,7 +37,6 @@
 
     <!-- Main Content -->
     <div class="container mx-auto px-4 py-8 max-w-6xl">
-        <!-- Header -->
         <header class="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
             <div>
                 <h1 class="text-2xl font-bold text-cyan-400"><i class="fa-solid fa-network-wired ml-2"></i>مدیریت تانل‌های Rathole</h1>
@@ -120,9 +116,9 @@
                                     {% endif %}
                                 </td>
                                 <td class="p-4 text-center space-x-2 space-x-reverse">
-                                    <a href="/delete_node/{{ n.id }}" onclick="return confirm('آیا از حذف این نود مطمئن هستید؟')" class="bg-slate-900 hover:bg-slate-800 text-rose-400 px-3 py-1.5 rounded-lg transition border border-slate-700 inline-block">
+                                    <button @click="if(confirm('آیا از حذف این نود مطمئن هستید؟')) { fetch('/delete_node/{{ n.id }}').then(() => location.reload()); }" class="bg-slate-900 hover:bg-slate-800 text-rose-400 px-3 py-1.5 rounded-lg transition border border-slate-700">
                                         <i class="fa-solid fa-trash ml-1"></i> حذف
-                                    </a>
+                                    </button>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -144,7 +140,25 @@
                 <h3 class="text-sm font-bold text-cyan-400"><i class="fa-solid fa-server ml-2"></i>افزودن نود / تانل جدید</h3>
                 <button @click="showAddModal = false" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <form action="/add_node" method="POST" class="space-y-3 text-xs">
+            <form @submit.prevent="
+                const payload = {
+                    label: $el.label.value,
+                    ip: $el.ip.value,
+                    ssh_port: parseInt($el.ssh_port.value),
+                    ssh_user: $el.ssh_user.value,
+                    ssh_password: $el.ssh_password.value,
+                    user_port: parseInt($el.user_port.value),
+                    target_port: parseInt($el.target_port.value)
+                };
+                fetch('/add_node', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                }).then(res => res.json()).then(() => {
+                    alert('نود اضافه شد و فرآیند اتصال آغاز گردید.');
+                    location.reload();
+                });
+            " class="space-y-3 text-xs">
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-slate-400 mb-1">عنوان نود (Label)</label>
@@ -194,7 +208,16 @@
                 <h3 class="text-sm font-bold text-cyan-400"><i class="fa-solid fa-key ml-2"></i>تغییر رمز عبور پنل</h3>
                 <button @click="showPasswordModal = false" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <form @submit.prevent="fetch('/update_password', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'new_password=' + encodeURIComponent($el.new_pass.value)}).then(res => res.json()).then(data => { alert('رمز عبور با موفقیت تغییر کرد'); location.reload(); })" class="text-xs">
+            <form @submit.prevent="
+                fetch('/update_password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({new_password: $el.new_pass.value})
+                }).then(res => res.json()).then(data => {
+                    alert('رمز عبور با موفقیت تغییر کرد');
+                    location.reload();
+                });
+            " class="text-xs">
                 <div class="mb-4">
                     <label class="block text-slate-400 mb-1">رمز عبور جدید</label>
                     <input type="password" name="new_pass" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
