@@ -40,17 +40,19 @@ def save_nodes(nodes):
     with open(NODES_FILE, "w") as f: json.dump(nodes, f, indent=4)
 
 def update_iran_config(user_port: int):
+    # Ensure directory and file exists
+    os.makedirs(os.path.dirname(SERVER_TOML), exist_ok=True)
     if not os.path.exists(SERVER_TOML):
-        os.makedirs(os.path.dirname(SERVER_TOML), exist_ok=True)
         with open(SERVER_TOML, "w") as f:
             f.write(f'[server]\nbind_addr = "0.0.0.0:{CORE_PORT}"\ndefault_token = "musixal"\nheartbeat_interval = 30\n\n[server.transport]\ntype = "tcp"\n\n[server.transport.tcp]\nnodelay = true\n')
 
     with open(SERVER_TOML, "r") as f: content = f.read()
-
     service_block = f'\n[server.services.{user_port}]\ntype = "tcp"\nbind_addr = "0.0.0.0:{user_port}"\n'
+    
     if f"[server.services.{user_port}]" not in content:
         with open(SERVER_TOML, "a") as f: f.write(service_block)
     
+    # Reload server service
     subprocess.run(["ufw", "allow", f"{user_port}/tcp"], capture_output=True)
     subprocess.run(["systemctl", "restart", "rathole-server"], capture_output=True)
 
@@ -64,7 +66,7 @@ async def setup_remote_node(node_data: dict):
         if [ ! -f /usr/local/bin/rathole ]; then
             ARCH=$(uname -m)
             FILE="rathole-x86_64-unknown-linux-gnu.zip"
-            if [ "$ARCH" = "aarch64" ]; then FILE="rathole-aarch64-unknown-linux-musl.zip"; fi
+            if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then FILE="rathole-aarch64-unknown-linux-musl.zip"; fi
             wget -qO /tmp/rathole.zip "https://github.com/rathole-org/rathole/releases/download/v0.5.0/$FILE"
             unzip -o /tmp/rathole.zip -d /usr/local/bin/
             chmod +x /usr/local/bin/rathole
@@ -98,66 +100,68 @@ WantedBy=multi-user.target
 EOF
         systemctl daemon-reload
         systemctl enable --now rathole
+        systemctl restart rathole
         """
         stdin, stdout, stderr = ssh.exec_command(setup_script)
-        return stdout.channel.recv_exit_status() == 0
+        exit_code = stdout.channel.recv_exit_status()
+        ssh.close()
+        return exit_code == 0
     except: return False
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"nodes": get_nodes(), "config": get_config()})
 
+class NodeModel(BaseModel):
+    label: str; ip: str; ssh_port: int; ssh_user: str; ssh_password: str; user_port: int; target_port: int
+
+@app.post("/add_node")
+async def add_node(data: NodeModel):
+    # 1. Pre-check SSH
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(data.ip, port=data.ssh_port, username=data.ssh_user, password=data.ssh_password, timeout=10)
+        ssh.close()
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"خطا در اتصال SSH: {str(e)}"}, status_code=400)
+
+    # 2. Update Iran
+    try:
+        update_iran_config(data.user_port)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"خطا در سرور ایران: {str(e)}"}, status_code=400)
+
+    # 3. Setup Remote and Save
+    nodes = get_nodes()
+    node_id = f"node_{len(nodes) + 1}"
+    node_data = {
+        "id": node_id, "name": data.label, "ip": data.ip, "ssh_port": data.ssh_port,
+        "ssh_user": data.ssh_user, "ssh_password": data.ssh_password,
+        "user_port": data.user_port, "target_port": data.target_port, "status": "active"
+    }
+    
+    success = await setup_remote_node(node_data)
+    if not success:
+        node_data["status"] = "error"
+        nodes.append(node_data); save_nodes(nodes)
+        return JSONResponse({"status": "error", "message": "نصب روی سرور خارج با خطا مواجه شد."}, status_code=400)
+
+    nodes.append(node_data); save_nodes(nodes)
+    return JSONResponse({"status": "success", "message": "تانل با موفقیت نصب و متصل گردید."})
+
+@app.get("/delete_node/{node_id}")
+async def delete_node(node_id: str):
+    nodes = [n for n in get_nodes() if n['id'] != node_id]
+    save_nodes(nodes); return JSONResponse({"status": "success"})
+
 class PasswordModel(BaseModel):
     new_password: str
 
 @app.post("/update_password")
 async def update_password(data: PasswordModel):
-    config = get_config()
-    config["password"] = data.new_password
+    config = get_config(); config["password"] = data.new_password
     with open(CONFIG_FILE, "w") as f: json.dump(config, f)
-    return JSONResponse({"status": "success"})
-
-class NodeModel(BaseModel):
-    label: str
-    ip: str
-    ssh_port: int = 22
-    ssh_user: str = "root"
-    ssh_password: str
-    user_port: int
-    target_port: int
-
-@app.post("/add_node")
-async def add_node(data: NodeModel):
-    update_iran_config(data.user_port)
-    nodes = get_nodes()
-    node_id = f"node_{len(nodes) + 1}"
-    new_node = {
-        "id": node_id,
-        "name": data.label,
-        "ip": data.ip,
-        "ssh_port": data.ssh_port,
-        "ssh_user": data.ssh_user,
-        "ssh_password": data.ssh_password,
-        "user_port": data.user_port,
-        "target_port": data.target_port,
-        "status": "pending"
-    }
-    nodes.append(new_node)
-    save_nodes(nodes)
-    asyncio.create_task(setup_remote_and_update_status(node_id, new_node))
-    return JSONResponse({"status": "success"})
-
-async def setup_remote_and_update_status(node_id, node_data):
-    success = await setup_remote_node(node_data)
-    nodes = get_nodes()
-    for n in nodes:
-        if n['id'] == node_id: n['status'] = 'active' if success else 'error'
-    save_nodes(nodes)
-
-@app.get("/delete_node/{node_id}")
-async def delete_node(node_id: str):
-    nodes = [n for n in get_nodes() if n['id'] != node_id]
-    save_nodes(nodes)
     return JSONResponse({"status": "success"})
 
 if __name__ == "__main__":
