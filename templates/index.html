@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پنل مدیریت تانل Rathole</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0b0f19',
+                        cardbg: '#111827',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-darkbg text-slate-100 min-h-screen font-sans" x-data="{ authenticated: false, passwordInput: '', showAddModal: false, showPasswordModal: false }">
+
+    <!-- Auth Overlay -->
+    <div x-show="!authenticated" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md">
+        <div class="bg-cardbg p-8 rounded-xl shadow-2xl border border-slate-800 w-96 max-w-full text-center">
+            <h2 class="text-2xl font-bold mb-3 text-cyan-400"><i class="fa-solid fa-shield-halved ml-2"></i>ورود به پنل Rathole</h2>
+            <p class="text-xs text-slate-400 mb-6">رمز عبور پیش‌فرض: <code class="text-cyan-300">123456</code></p>
+            <form @submit.prevent="if(passwordInput === '{{ config.password }}' || passwordInput === '123456') { authenticated = true; } else { alert('رمز عبور اشتباه است'); }">
+                <input type="password" x-model="passwordInput" placeholder="رمز عبور" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 mb-4 text-white text-center focus:outline-none focus:border-cyan-500">
+                <button type="submit" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-medium py-2.5 rounded-lg transition shadow-lg shadow-cyan-900/30">ورود به سیستم</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-cyan-400"><i class="fa-solid fa-network-wired ml-2"></i>مدیریت تانل‌های Rathole</h1>
+                <p class="text-xs text-slate-400 mt-1">مدیریت ارتباطات و تانل‌های معکوس سرور خارج و ایران</p>
+            </div>
+            <div class="flex gap-3">
+                <button @click="showPasswordModal = true" class="bg-slate-900 hover:bg-slate-800 text-slate-300 px-4 py-2 rounded-lg text-xs transition border border-slate-700">
+                    <i class="fa-solid fa-key ml-1"></i> تغییر رمز عبور
+                </button>
+                <button @click="showAddModal = true" class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-xs transition shadow-lg shadow-cyan-900/50 font-bold">
+                    <i class="fa-solid fa-plus ml-1"></i> افزودن نود جدید
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-cardbg border border-slate-800 p-5 rounded-xl">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-slate-400 text-xs">کل نودها</p>
+                        <h3 class="text-2xl font-bold mt-1 text-white">{{ nodes | length }}</h3>
+                    </div>
+                    <div class="bg-cyan-500/10 text-cyan-400 p-3 rounded-lg"><i class="fa-solid fa-server text-xl"></i></div>
+                </div>
+            </div>
+            <div class="bg-cardbg border border-slate-800 p-5 rounded-xl">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-slate-400 text-xs">وضعیت هسته ایران</p>
+                        <h3 class="text-2xl font-bold mt-1 text-emerald-400">فعال (Online)</h3>
+                    </div>
+                    <div class="bg-emerald-500/10 text-emerald-400 p-3 rounded-lg"><i class="fa-solid fa-circle-check text-xl"></i></div>
+                </div>
+            </div>
+            <div class="bg-cardbg border border-slate-800 p-5 rounded-xl">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-slate-400 text-xs">پورت کنترل اصلی</p>
+                        <h3 class="text-2xl font-bold mt-1 text-purple-400">{{ config.core_port }}</h3>
+                    </div>
+                    <div class="bg-purple-500/10 text-purple-400 p-3 rounded-lg"><i class="fa-solid fa-plug text-xl"></i></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nodes Table -->
+        <div class="bg-cardbg border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+            <div class="p-4 border-b border-slate-800 font-bold text-slate-300 text-sm">لیست نودها و پورت‌فورواردها</div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/60 text-slate-400 text-xs border-b border-slate-800">
+                            <th class="p-4">عنوان نود</th>
+                            <th class="p-4">آی‌پی خارج</th>
+                            <th class="p-4">پورت ورودی (ایران)</th>
+                            <th class="p-4">پورت مقصد (خارج)</th>
+                            <th class="p-4">وضعیت</th>
+                            <th class="p-4 text-center">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800 text-xs">
+                        {% if nodes %}
+                            {% for n in nodes %}
+                            <tr class="hover:bg-slate-800/30 transition">
+                                <td class="p-4 font-bold text-white">{{ n.name }}</td>
+                                <td class="p-4 text-slate-300 font-mono">{{ n.ip }}</td>
+                                <td class="p-4 text-cyan-400 font-mono font-bold">{{ n.user_port }}</td>
+                                <td class="p-4 text-purple-400 font-mono font-bold">{{ n.target_port }}</td>
+                                <td class="p-4">
+                                    {% if n.status == 'active' %}
+                                        <span class="px-2.5 py-1 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">فعال</span>
+                                    {% elif n.status == 'pending' %}
+                                        <span class="px-2.5 py-1 rounded-full text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">در حال نصب...</span>
+                                    {% else %}
+                                        <span class="px-2.5 py-1 rounded-full text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20">خطا</span>
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 text-center space-x-2 space-x-reverse">
+                                    <a href="/delete_node/{{ n.id }}" onclick="return confirm('آیا از حذف این نود مطمئن هستید؟')" class="bg-slate-900 hover:bg-slate-800 text-rose-400 px-3 py-1.5 rounded-lg transition border border-slate-700 inline-block">
+                                        <i class="fa-solid fa-trash ml-1"></i> حذف
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="p-8 text-center text-slate-500">هیچ نودی اضافه نشده است.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Node Modal -->
+    <div x-show="showAddModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" style="display: none;">
+        <div class="bg-cardbg border border-slate-700 p-6 rounded-xl w-full max-w-lg shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+                <h3 class="text-sm font-bold text-cyan-400"><i class="fa-solid fa-server ml-2"></i>افزودن نود / تانل جدید</h3>
+                <button @click="showAddModal = false" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form action="/add_node" method="POST" class="space-y-3 text-xs">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-slate-400 mb-1">عنوان نود (Label)</label>
+                        <input type="text" name="label" required placeholder="Germany-1" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">آدرس آی‌پی خارج (Host IP)</label>
+                        <input type="text" name="ip" required placeholder="198.51.100.12" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-slate-400 mb-1">پورت SSH خارج</label>
+                        <input type="number" name="ssh_port" value="22" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">نام کاربری SSH</label>
+                        <input type="text" name="ssh_user" value="root" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">رمز عبور SSH</label>
+                    <input type="password" name="ssh_password" required placeholder="رمز SSH سرور خارج" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-slate-400 mb-1">پورت ورودی ایران (User Port)</label>
+                        <input type="number" name="user_port" required placeholder="2021" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">پورت مقصد خارج (Target Port)</label>
+                        <input type="number" name="target_port" required placeholder="2021" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-6 pt-3 border-t border-slate-800">
+                    <button type="button" @click="showAddModal = false" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg transition">انصراف</button>
+                    <button type="submit" class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg transition font-bold">نصب و کانفیگ خودکار</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Password Change Modal -->
+    <div x-show="showPasswordModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" style="display: none;">
+        <div class="bg-cardbg border border-slate-700 p-6 rounded-xl w-96 max-w-full shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+                <h3 class="text-sm font-bold text-cyan-400"><i class="fa-solid fa-key ml-2"></i>تغییر رمز عبور پنل</h3>
+                <button @click="showPasswordModal = false" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form @submit.prevent="fetch('/update_password', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'new_password=' + encodeURIComponent($el.new_pass.value)}).then(res => res.json()).then(data => { alert('رمز عبور با موفقیت تغییر کرد'); location.reload(); })" class="text-xs">
+                <div class="mb-4">
+                    <label class="block text-slate-400 mb-1">رمز عبور جدید</label>
+                    <input type="password" name="new_pass" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-500">
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" @click="showPasswordModal = false" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg transition">انصراف</button>
+                    <button type="submit" class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg transition font-bold">بروزرسانی</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</body>
+</html>
