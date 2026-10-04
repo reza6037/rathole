@@ -9,38 +9,36 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-app = FastAPI()
-templates = Jinja2Templates(directory="templates")
-
-CONFIG_FILE = "config.json"
-NODES_FILE = "nodes.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+NODES_FILE = os.path.join(BASE_DIR, "nodes.json")
 SERVER_TOML = "/etc/rathole/server.toml"
 CORE_PORT = 2020
+
+app = FastAPI()
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 try:
     IRAN_IP = requests.get('https://api.ipify.org', timeout=5).text.strip()
 except:
     IRAN_IP = "127.0.0.1"
 
-if not os.path.exists(CONFIG_FILE):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump({"password": "123456", "core_port": CORE_PORT}, f)
-
-if not os.path.exists(NODES_FILE):
-    with open(NODES_FILE, "w") as f:
-        json.dump([], f)
-
 def get_config():
+    if not os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "w") as f: json.dump({"password": "123456", "core_port": CORE_PORT}, f)
+        return {"password": "123456", "core_port": CORE_PORT}
     with open(CONFIG_FILE, "r") as f: return json.load(f)
 
 def get_nodes():
+    if not os.path.exists(NODES_FILE):
+        with open(NODES_FILE, "w") as f: json.dump([], f)
+        return []
     with open(NODES_FILE, "r") as f: return json.load(f)
 
 def save_nodes(nodes):
     with open(NODES_FILE, "w") as f: json.dump(nodes, f, indent=4)
 
 def update_iran_config(user_port: int):
-    # Ensure directory and file exists
     os.makedirs(os.path.dirname(SERVER_TOML), exist_ok=True)
     if not os.path.exists(SERVER_TOML):
         with open(SERVER_TOML, "w") as f:
@@ -52,7 +50,6 @@ def update_iran_config(user_port: int):
     if f"[server.services.{user_port}]" not in content:
         with open(SERVER_TOML, "a") as f: f.write(service_block)
     
-    # Reload server service
     subprocess.run(["ufw", "allow", f"{user_port}/tcp"], capture_output=True)
     subprocess.run(["systemctl", "restart", "rathole-server"], capture_output=True)
 
@@ -117,7 +114,6 @@ class NodeModel(BaseModel):
 
 @app.post("/add_node")
 async def add_node(data: NodeModel):
-    # 1. Pre-check SSH
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -126,13 +122,11 @@ async def add_node(data: NodeModel):
     except Exception as e:
         return JSONResponse({"status": "error", "message": f"خطا در اتصال SSH: {str(e)}"}, status_code=400)
 
-    # 2. Update Iran
     try:
         update_iran_config(data.user_port)
     except Exception as e:
         return JSONResponse({"status": "error", "message": f"خطا در سرور ایران: {str(e)}"}, status_code=400)
 
-    # 3. Setup Remote and Save
     nodes = get_nodes()
     node_id = f"node_{len(nodes) + 1}"
     node_data = {
